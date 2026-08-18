@@ -146,7 +146,7 @@ function shot3() {
 }
 
 function shot4() {
-  const w=1280,h=800; return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">${defs()}${bg(w,h)}${header(w,4,'Preview before export.','Play, inspect, rename, copy, download, or delete locally.')}
+  const w=1280,h=800; return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">${defs()}${bg(w,h)}${header(w,4,'Preview &amp; export.','Inspect, rename, download, or delete.')}
     ${browser(466,112,744,620,'Media Preview — Capture Studio')}
     <g transform="translate(466 160)">
       <rect width="744" height="572" fill="#07080B"/>
