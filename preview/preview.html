@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Media Preview - Studio Capture</title>
+  <link rel="stylesheet" href="preview.css">
+</head>
+<body>
+  <div class="preview-layout">
+    <!-- Top Navigation Header -->
+    <header class="navbar">
+      <div class="nav-left">
+        <div class="brand-logo">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="4" width="20" height="16" rx="4"/>
+            <circle cx="12" cy="12" r="4" fill="#EF4444" stroke="none"/>
+          </svg>
+          <span class="logo-title">Studio Capture</span>
+        </div>
+        <div class="title-container">
+          <input type="text" id="captureTitleInput" class="title-input" value="Untitled Media" placeholder="Enter title...">
+          <span id="captureMeta" class="meta-tag">Video • 00:00</span>
+        </div>
+      </div>
+
+      <div class="nav-right">
+        <button id="btnCopy" class="btn btn-ghost hidden" title="Copy to Clipboard">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+          Copy
+        </button>
+
+        <button id="btnDelete" class="btn btn-danger-outline" title="Delete capture">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+          </svg>
+          Delete
+        </button>
+
+        <button id="btnDownload" class="btn btn-primary" title="Download file">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Download
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace Area -->
+    <div class="workspace-body">
+      <!-- Media Display Area -->
+      <main class="viewer-container">
+        <div id="loadingSpinner" class="spinner-container">
+          <div class="spinner"></div>
+          <p>Loading media capture...</p>
+        </div>
+
+        <!-- Video Player View -->
+        <div id="videoContainer" class="media-box hidden">
+          <video id="videoPlayer" controls autoplay></video>
+        </div>
+
+        <!-- Image Screenshot View -->
+        <div id="imageContainer" class="media-box hidden">
+          <div class="zoom-controls">
+            <button id="btnZoomOut" class="zoom-btn" title="Zoom Out">-</button>
+            <span id="zoomLevel" class="zoom-text">100%</span>
+            <button id="btnZoomIn" class="zoom-btn" title="Zoom In">+</button>
+            <button id="btnResetZoom" class="zoom-btn" title="Reset Zoom">Fit</button>
+          </div>
+          <div class="image-wrapper">
+            <img id="imageViewer" alt="Full Page Screenshot">
+          </div>
+        </div>
+
+        <!-- Error State -->
+        <div id="errorState" class="error-box hidden">
+          <h3>Capture Not Found</h3>
+          <p>The requested media item was removed or could not be loaded from local database.</p>
+        </div>
+      </main>
+
+      <!-- Sidebar Gallery List -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <h2>All Captures</h2>
+        </div>
+        <div id="sidebarList" class="sidebar-list">
+          <!-- Populated dynamically -->
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="../utils/db.js"></script>
+  <script src="preview.js"></script>
+</body>
+</html>

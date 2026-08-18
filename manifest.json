@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Capture Studio: Recorder & Screenshots",
+  "short_name": "Capture",
+  "version": "1.0.0",
+  "minimum_chrome_version": "116",
+  "description": "Record screen with audio (tabs, windows, full screen) and capture full scrollable webpage screenshots.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabCapture",
+    "offscreen"
+  ]
+}
