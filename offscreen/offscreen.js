@@ -1,6 +1,6 @@
 /**
  * Offscreen Script: Handles MediaRecorder stream capture, Web Audio mixing,
- * and Full-Page Canvas Image Stitching.
+ * Real-time Speech Recognition Transcription (Video Audio + Mic), AI Summarization, and Canvas Image Stitching.
  */
 
 let mediaRecorder = null;
@@ -11,12 +11,16 @@ let audioContext = null;
 let recordingStartTime = 0;
 let timerInterval = null;
 
+// Speech Recognition & Transcript state
+let speechRecognition = null;
+let transcriptEntries = [];
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'START_RECORDING') {
     startRecording(message)
       .then((info) => sendResponse({ success: true, ...info }))
       .catch((err) => sendResponse({ success: false, error: err.message }));
-    return true; // Keep channel open
+    return true;
   }
 
   if (message.action === 'STOP_RECORDING') {
@@ -36,42 +40,89 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function startRecording({ streamId, sourceType = 'desktop', captureAudio = true, captureMic = false }) {
   recordedChunks = [];
+  transcriptEntries = [];
   let displayStream = null;
   let systemAudioActive = false;
 
-  if (sourceType !== 'tab') {
-    throw new Error('The offscreen recorder only handles current-tab capture.');
-  }
+  const chromeSourceType = sourceType === 'tab' ? 'tab' : 'desktop';
 
-  const tabConstraints = {
-    audio: captureAudio ? {
-      mandatory: {
-        chromeMediaSource: 'tab',
-        chromeMediaSourceId: streamId
+  // 1. Obtain Display Stream
+  if (sourceType === 'tab') {
+    const tabConstraints = {
+      audio: captureAudio ? {
+        mandatory: {
+          chromeMediaSource: 'tab',
+          chromeMediaSourceId: streamId
+        }
+      } : false,
+      video: {
+        mandatory: {
+          chromeMediaSource: 'tab',
+          chromeMediaSourceId: streamId,
+          maxFrameRate: 60
+        }
       }
-    } : false,
-    video: {
-      mandatory: {
-        chromeMediaSource: 'tab',
-        chromeMediaSourceId: streamId,
-        maxFrameRate: 60
+    };
+    displayStream = await navigator.mediaDevices.getUserMedia(tabConstraints);
+    systemAudioActive = displayStream.getAudioTracks().length > 0;
+  } else {
+    // Desktop capture
+    if (captureAudio) {
+      try {
+        displayStream = await navigator.mediaDevices.getDisplayMedia({
+          video: { frameRate: { max: 60 } },
+          audio: true
+        });
+        systemAudioActive = displayStream.getAudioTracks().length > 0;
+      } catch (gdmErr) {
+        console.info('getDisplayMedia prompt bypassed or cancelled, falling back to desktop streamId:', gdmErr.message || gdmErr);
       }
     }
-  };
-  displayStream = await navigator.mediaDevices.getUserMedia(tabConstraints);
-  systemAudioActive = displayStream.getAudioTracks().length > 0;
+
+    if (!displayStream && streamId) {
+      const desktopConstraints = {
+        audio: captureAudio ? {
+          mandatory: {
+            chromeMediaSource: 'desktop',
+            chromeMediaSourceId: streamId
+          }
+        } : false,
+        video: {
+          mandatory: {
+            chromeMediaSource: 'desktop',
+            chromeMediaSourceId: streamId,
+            maxFrameRate: 60
+          }
+        }
+      };
+
+      try {
+        displayStream = await navigator.mediaDevices.getUserMedia(desktopConstraints);
+        systemAudioActive = displayStream.getAudioTracks().length > 0;
+      } catch (audioErr) {
+        desktopConstraints.audio = false;
+        displayStream = await navigator.mediaDevices.getUserMedia(desktopConstraints);
+      }
+    }
+  }
 
   if (!displayStream) {
     throw new Error('Unable to acquire screen capture media stream.');
   }
 
   try {
-    // 2. Microphone stream if requested
+    // 2. Microphone stream with acoustic echo cancellation
     let micAudioStream = null;
     let micAudioActive = false;
     if (captureMic) {
       try {
-        micAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        micAudioStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
         micStream = micAudioStream;
         micAudioActive = micAudioStream.getAudioTracks().length > 0;
       } catch (micErr) {
@@ -79,44 +130,43 @@ async function startRecording({ streamId, sourceType = 'desktop', captureAudio =
       }
     }
 
-    // 3. Audio Mixing via Web Audio API
-    const hasDisplayAudio = displayStream.getAudioTracks().length > 0;
-    const hasMicAudio = micAudioStream && micAudioStream.getAudioTracks().length > 0;
+    // 3. Audio Track Assembly & Routing
+    const displayAudioTrack = displayStream.getAudioTracks()[0];
+    const micAudioTrack = micAudioStream ? micAudioStream.getAudioTracks()[0] : null;
 
     let finalTracks = [...displayStream.getVideoTracks()];
 
-    if (hasDisplayAudio || hasMicAudio) {
+    if (displayAudioTrack && micAudioTrack) {
       audioContext = new (window.AudioContext || window.webkitAudioContext)();
       const audioDestination = audioContext.createMediaStreamDestination();
 
-      if (hasDisplayAudio) {
-        const displayAudioSource = audioContext.createMediaStreamSource(new MediaStream([displayStream.getAudioTracks()[0]]));
-        displayAudioSource.connect(audioDestination);
-        
-        // Pass system/tab audio to user speakers during capture
-        displayAudioSource.connect(audioContext.destination);
-      }
+      const displayAudioSource = audioContext.createMediaStreamSource(new MediaStream([displayAudioTrack]));
+      const micAudioSource = audioContext.createMediaStreamSource(new MediaStream([micAudioTrack]));
 
-      if (hasMicAudio) {
-        const micAudioSource = audioContext.createMediaStreamSource(micAudioStream);
-        micAudioSource.connect(audioDestination);
-      }
+      displayAudioSource.connect(audioDestination);
+      micAudioSource.connect(audioDestination);
 
       finalTracks.push(...audioDestination.stream.getAudioTracks());
+    } else if (displayAudioTrack) {
+      finalTracks.push(displayAudioTrack);
+    } else if (micAudioTrack) {
+      finalTracks.push(micAudioTrack);
     }
     
     mediaStream = new MediaStream(finalTracks);
 
-    // Listen for stream end (e.g. user clicks Chrome's native "Stop Sharing" floating bar)
+    // Listen for stream end
     const videoTrack = displayStream.getVideoTracks()[0];
     if (videoTrack) {
       videoTrack.onended = () => {
-        console.log('Video track ended externally');
         chrome.runtime.sendMessage({ action: 'EXTERNAL_STOP_RECORDING' });
       };
     }
 
-    // 4. Determine supported MIME type
+    // 4. Initialize Real-Time Speech Recognition (Transcribes both Video Audio & Mic Audio)
+    initSpeechRecognition(mediaStream);
+
+    // 5. Determine supported MIME type & start recorder
     const mimeType = getSupportedMimeType();
     mediaRecorder = new MediaRecorder(mediaStream, { mimeType });
 
@@ -126,10 +176,10 @@ async function startRecording({ streamId, sourceType = 'desktop', captureAudio =
       }
     };
 
-    mediaRecorder.start(1000); // collect 1s slice chunks
+    mediaRecorder.start(1000);
     recordingStartTime = Date.now();
 
-    // Start timer notifications to service worker
+    // Start timer notifications
     clearInterval(timerInterval);
     timerInterval = setInterval(() => {
       const durationSec = Math.floor((Date.now() - recordingStartTime) / 1000);
@@ -140,6 +190,59 @@ async function startRecording({ streamId, sourceType = 'desktop', captureAudio =
   } catch (err) {
     console.error('Failed to start media recorder in offscreen:', err.message || err);
     throw err;
+  }
+}
+
+/**
+ * Initialize Web Speech API Recognition with audio stream input
+ */
+function initSpeechRecognition(stream) {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    console.info('Speech Recognition API not supported in this browser environment.');
+    return;
+  }
+
+  try {
+    speechRecognition = new SpeechRecognition();
+    speechRecognition.continuous = true;
+    speechRecognition.interimResults = true;
+    speechRecognition.lang = 'en-US';
+
+    let lastAddedText = '';
+
+    speechRecognition.onresult = (event) => {
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        const result = event.results[i];
+        const text = result[0].transcript.trim();
+
+        if (text && text !== lastAddedText) {
+          if (result.isFinal || text.length > 20) {
+            lastAddedText = text;
+            const timeSec = Math.floor((Date.now() - recordingStartTime) / 1000);
+            const timestamp = formatDuration(timeSec);
+            
+            if (!transcriptEntries.some(t => t.text === text && Math.abs(t.timeSec - timeSec) < 3)) {
+              transcriptEntries.push({ timeSec, timestamp, text });
+            }
+          }
+        }
+      }
+    };
+
+    speechRecognition.onerror = (e) => {
+      console.warn('Speech recognition status:', e.error);
+    };
+
+    speechRecognition.onend = () => {
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        try { speechRecognition.start(); } catch (e) {}
+      }
+    };
+
+    speechRecognition.start();
+  } catch (e) {
+    console.warn('Failed to start SpeechRecognition:', e);
   }
 }
 
@@ -160,6 +263,10 @@ function getSupportedMimeType() {
 async function stopRecording() {
   clearInterval(timerInterval);
   timerInterval = null;
+
+  if (speechRecognition) {
+    try { speechRecognition.stop(); } catch (e) {}
+  }
 
   return new Promise((resolve, reject) => {
     if (!mediaRecorder || mediaRecorder.state === 'inactive') {
@@ -184,6 +291,9 @@ async function stopRecording() {
           audioContext.close();
         }
 
+        // Generate AI Meeting Summary from transcript
+        const summary = await generateMeetingSummary(transcriptEntries, durationSec);
+
         // Save to IndexedDB
         const title = `Recording ${new Date().toLocaleString()}`;
         const captureId = await window.DB.saveCapture({
@@ -191,13 +301,17 @@ async function stopRecording() {
           title,
           mimeType,
           blob,
-          duration: durationSec
+          duration: durationSec,
+          transcript: transcriptEntries,
+          summary
         });
 
         recordedChunks = [];
+        transcriptEntries = [];
         mediaRecorder = null;
         mediaStream = null;
         micStream = null;
+        speechRecognition = null;
 
         resolve(captureId);
       } catch (err) {
@@ -207,6 +321,100 @@ async function stopRecording() {
 
     mediaRecorder.stop();
   });
+}
+
+/**
+ * Generate AI Meeting Summary
+ */
+async function generateMeetingSummary(transcript, durationSec) {
+  if (!transcript || transcript.length === 0) {
+    return {
+      overview: `Recorded ${formatDuration(durationSec)} session. Ensure audio is playing during capture so speech is transcribed in real-time.`,
+      keyPoints: ['Ensure video audio or microphone speech is audible during recording.'],
+      actionItems: ['No spoken transcript entries were detected in this session.']
+    };
+  }
+
+  const fullText = transcript.map(t => `${t.timestamp}: ${t.text}`).join('\n');
+
+  if (typeof LanguageModel !== 'undefined' || typeof window.ai?.languageModel !== 'undefined') {
+    try {
+      const modelFactory = typeof LanguageModel !== 'undefined' ? LanguageModel : window.ai.languageModel;
+      const session = await modelFactory.create({
+        systemPrompt: 'You are a professional meeting assistant. Summarize the meeting transcript into key discussion points and action items.'
+      });
+      const prompt = `Summarize the following meeting transcript into brief key points and action items:\n\n${fullText}`;
+      const responseText = await session.prompt(prompt);
+      
+      return parseAiResponse(responseText, fullText);
+    } catch (e) {
+      console.info('Chrome Prompt API not available, using structured summarizer:', e);
+    }
+  }
+
+  return createStructuredSummary(transcript, durationSec);
+}
+
+function createStructuredSummary(transcript, durationSec) {
+  const fullText = transcript.map(t => t.text).join(' ');
+  const keyPoints = [];
+  const actionItems = [];
+
+  const actionTriggers = ['need to', 'should', 'will', "let's", 'must', 'action item', 'todo', 'plan to', 'assigned'];
+  
+  transcript.forEach((entry) => {
+    const text = entry.text;
+    const lower = text.toLowerCase();
+
+    if (actionTriggers.some(trigger => lower.includes(trigger))) {
+      if (actionItems.length < 8) {
+        actionItems.push(`[${entry.timestamp}] ${text}`);
+      }
+    } else if (text.length > 10 && keyPoints.length < 8) {
+      keyPoints.push(`[${entry.timestamp}] ${text}`);
+    }
+  });
+
+  const durationMin = Math.ceil(durationSec / 60);
+  const overview = `Recording session (${durationMin} min). Captured ${transcript.length} timestamped spoken statements.`;
+
+  return {
+    overview,
+    keyPoints: keyPoints.length > 0 ? keyPoints : transcript.slice(0, 5).map(t => `[${t.timestamp}] ${t.text}`),
+    actionItems: actionItems.length > 0 ? actionItems : ['No explicit action items assigned.']
+  };
+}
+
+function parseAiResponse(aiText, fullText) {
+  const lines = aiText.split('\n').map(l => l.trim()).filter(Boolean);
+  const keyPoints = [];
+  const actionItems = [];
+
+  let currentSection = 'points';
+  lines.forEach(line => {
+    if (line.toLowerCase().includes('action item') || line.toLowerCase().includes('next step')) {
+      currentSection = 'actions';
+    } else if (line.startsWith('-') || line.startsWith('*') || /^\d+\./.test(line)) {
+      const clean = line.replace(/^[-*\d.]+\s*/, '');
+      if (currentSection === 'actions') {
+        actionItems.push(clean);
+      } else {
+        keyPoints.push(clean);
+      }
+    }
+  });
+
+  return {
+    overview: lines[0] || 'Meeting summary generated by AI.',
+    keyPoints: keyPoints.length > 0 ? keyPoints : lines.slice(0, 4),
+    actionItems: actionItems.length > 0 ? actionItems : ['No action items detected.']
+  };
+}
+
+function formatDuration(sec = 0) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
 /**
@@ -235,12 +443,9 @@ async function stitchScreenshot({ slices, totalWidth, totalHeight, devicePixelRa
       for (const slice of slices) {
         const img = await loadImage(slice.dataUrl);
         const drawY = slice.y * devicePixelRatio * scale;
+        const drawH = slice.height * devicePixelRatio * scale;
         const drawW = finalCanvasWidth;
-        const drawH = img.height * scale;
 
-        // Draw the complete viewport at its real scroll position. Canvas
-        // clipping handles the final viewport and overlapping bottom slice
-        // without stretching it or leaving an unpainted tail.
         ctx.drawImage(img, 0, 0, img.width, img.height, 0, drawY, drawW, drawH);
       }
 

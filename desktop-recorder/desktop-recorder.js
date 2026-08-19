@@ -40,12 +40,18 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       displayStream = await navigator.mediaDevices.getDisplayMedia({
         video: { frameRate: { max: 60 } },
-        audio: captureAudio ? { suppressLocalAudioPlayback: false } : false
+        audio: captureAudio ? true : false
       });
 
       if (captureMic) {
         try {
-          micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          micStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            }
+          });
         } catch (micErr) {
           console.warn('Microphone unavailable:', micErr.message || micErr);
         }
@@ -92,7 +98,6 @@ document.addEventListener('DOMContentLoaded', () => {
           await chrome.windows.update(currentWindow.id, { state: 'minimized' });
         }
       } catch (minimizeErr) {
-        // Recording is already active; failure to minimize is non-fatal.
         console.warn('Could not minimize recorder window:', minimizeErr.message || minimizeErr);
       }
     } catch (err) {
@@ -104,26 +109,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function buildRecordingStream(screenStream, microphoneStream) {
     const finalTracks = [...screenStream.getVideoTracks()];
-    const hasScreenAudio = screenStream.getAudioTracks().length > 0;
-    const hasMicAudio = microphoneStream?.getAudioTracks().length > 0;
+    const screenAudioTrack = screenStream.getAudioTracks()[0];
+    const micAudioTrack = microphoneStream?.getAudioTracks()[0];
 
-    if (hasScreenAudio || hasMicAudio) {
-      audioContext = new AudioContext();
+    if (screenAudioTrack && micAudioTrack) {
+      // Both active: Mix using Web Audio API (connect ONLY to destination, NOT audioContext.destination!)
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
       const destination = audioContext.createMediaStreamDestination();
 
-      if (hasScreenAudio) {
-        const source = audioContext.createMediaStreamSource(
-          new MediaStream([screenStream.getAudioTracks()[0]])
-        );
-        source.connect(destination);
-        source.connect(audioContext.destination);
-      }
+      const screenSource = audioContext.createMediaStreamSource(new MediaStream([screenAudioTrack]));
+      const micSource = audioContext.createMediaStreamSource(new MediaStream([micAudioTrack]));
 
-      if (hasMicAudio) {
-        audioContext.createMediaStreamSource(microphoneStream).connect(destination);
-      }
+      screenSource.connect(destination);
+      micSource.connect(destination);
 
       finalTracks.push(...destination.stream.getAudioTracks());
+    } else if (screenAudioTrack) {
+      // Screen Audio only: Pass direct track to recorder (System plays to speakers natively!)
+      finalTracks.push(screenAudioTrack);
+    } else if (micAudioTrack) {
+      // Mic Audio only: Pass direct track
+      finalTracks.push(micAudioTrack);
     }
 
     return new MediaStream(finalTracks);

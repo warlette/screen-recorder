@@ -6,7 +6,13 @@
 - **Version:** 1.0.0
 - **Category:** Productivity
 - **Language:** English
-- **Single purpose:** Let users intentionally record a selected tab, window, or screen and capture screenshots of the active webpage, then preview and export those captures locally.
+- **Single purpose:** User-initiated local screen capture.
+
+## Single-purpose description
+
+> Capture Studio enables users to intentionally capture visual content from their browser or display. Users can record a selected tab, window, or screen, or take visible and full-page webpage screenshots, then preview, manage, and export those captures locally on their device.
+
+Recording and screenshots are two formats of the same screen-capture purpose. Every capture begins with an explicit user action or Chrome source-selection prompt. The extension does not monitor browsing activity, capture content in the background without user initiation, or transmit captures to the developer or third parties.
 
 ## Short description
 

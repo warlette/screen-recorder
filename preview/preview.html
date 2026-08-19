@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Media Preview - Studio Capture</title>
+  <title>Studio Capture - Meeting Recorder & AI Preview</title>
   <link rel="stylesheet" href="preview.css">
 </head>
 <body>
@@ -47,23 +47,85 @@
             <polyline points="7 10 12 15 17 10"/>
             <line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
-          Download
+          Download Media
         </button>
       </div>
     </header>
 
     <!-- Main Workspace Area -->
     <div class="workspace-body">
-      <!-- Media Display Area -->
+      <!-- Media Display & Meeting Intelligence Area -->
       <main class="viewer-container">
         <div id="loadingSpinner" class="spinner-container">
           <div class="spinner"></div>
-          <p>Loading media capture...</p>
+          <p>Loading media capture & AI transcript...</p>
         </div>
 
         <!-- Video Player View -->
         <div id="videoContainer" class="media-box hidden">
-          <video id="videoPlayer" controls autoplay></video>
+          <div class="view-tabs">
+            <button class="view-tab-btn active" data-view="view-video">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+              Video Recording
+            </button>
+            <button class="view-tab-btn" data-view="view-summary">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+              AI Meeting Summary
+            </button>
+            <button class="view-tab-btn" data-view="view-transcript">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              Live Transcript (<span id="transcriptCount">0</span>)
+            </button>
+          </div>
+
+          <!-- Tab 1: Video View -->
+          <div id="view-video" class="view-panel active">
+            <video id="videoPlayer" controls></video>
+          </div>
+
+          <!-- Tab 2: AI Summary View -->
+          <div id="view-summary" class="view-panel">
+            <div class="summary-card">
+              <div class="summary-header">
+                <h2>✨ AI Meeting Intelligence</h2>
+                <button id="btnExportSummary" class="btn btn-ghost btn-sm">Copy Summary</button>
+              </div>
+
+              <div class="summary-section">
+                <h3>📋 Overview</h3>
+                <p id="summaryOverview">Analyzing meeting audio transcript...</p>
+              </div>
+
+              <div class="summary-grid">
+                <div class="summary-column">
+                  <h3>📌 Key Discussion Points</h3>
+                  <ul id="summaryKeyPoints" class="summary-list">
+                    <li>No discussion points generated yet.</li>
+                  </ul>
+                </div>
+
+                <div class="summary-column">
+                  <h3>✅ Action Items & Next Steps</h3>
+                  <ul id="summaryActionItems" class="summary-list">
+                    <li>No action items assigned.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 3: Transcript View -->
+          <div id="view-transcript" class="view-panel">
+            <div class="transcript-card">
+              <div class="transcript-toolbar">
+                <input type="text" id="transcriptSearch" placeholder="Search transcript..." class="transcript-search">
+                <button id="btnExportTranscript" class="btn btn-ghost btn-sm">Export Transcript (.txt)</button>
+              </div>
+              <div id="transcriptList" class="transcript-list">
+                <div class="empty-state">No speech recognized during this recording session.</div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Image Screenshot View -->

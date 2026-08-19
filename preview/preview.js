@@ -1,5 +1,7 @@
 /**
  * Preview Player & Viewer Controller.
+ * Handles Video Playback, AI Meeting Summaries, Timestamped Transcripts,
+ * and Gallery Navigation.
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -32,6 +34,33 @@ document.addEventListener('DOMContentLoaded', async () => {
   const sidebarList = document.getElementById('sidebarList');
   const toast = document.getElementById('toast');
 
+  // View Tabs
+  const viewTabBtns = document.querySelectorAll('.view-tab-btn');
+  const viewPanels = document.querySelectorAll('.view-panel');
+
+  // Meeting Intelligence Elements
+  const transcriptCount = document.getElementById('transcriptCount');
+  const transcriptList = document.getElementById('transcriptList');
+  const transcriptSearch = document.getElementById('transcriptSearch');
+  const btnExportTranscript = document.getElementById('btnExportTranscript');
+
+  const summaryOverview = document.getElementById('summaryOverview');
+  const summaryKeyPoints = document.getElementById('summaryKeyPoints');
+  const summaryActionItems = document.getElementById('summaryActionItems');
+  const btnExportSummary = document.getElementById('btnExportSummary');
+
+  // Handle Inner View Tabs Switching
+  viewTabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetView = btn.getAttribute('data-view');
+      viewTabBtns.forEach(b => b.classList.remove('active'));
+      viewPanels.forEach(p => p.classList.remove('active'));
+
+      btn.classList.add('active');
+      document.getElementById(targetView).classList.add('active');
+    });
+  });
+
   // Load initial capture
   await loadCapture(currentCaptureId);
   await refreshSidebarList();
@@ -45,7 +74,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await refreshSidebarList();
   });
 
-  // Download
+  // Download Media
   btnDownload.addEventListener('click', () => {
     if (!currentItem || !currentItem.blob) {
       showToast('No media file to download.');
@@ -97,6 +126,52 @@ document.addEventListener('DOMContentLoaded', async () => {
         await refreshSidebarList();
       }
     }
+  });
+
+  // Export Transcript
+  btnExportTranscript.addEventListener('click', () => {
+    if (!currentItem || !currentItem.transcript || currentItem.transcript.length === 0) {
+      showToast('No transcript available to export.');
+      return;
+    }
+
+    const textLines = currentItem.transcript.map(t => `[${t.timestamp}] ${t.text}`).join('\n');
+    const blob = new Blob([textLines], { type: 'text/plain;charset=utf-8' });
+    const objectUrl = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    const sanitizeTitle = (currentItem.title || 'transcript').replace(/[^a-z0-9_-]/gi, '_');
+    a.download = `${sanitizeTitle}_transcript.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    showToast('Transcript exported!');
+  });
+
+  // Copy AI Summary
+  btnExportSummary.addEventListener('click', async () => {
+    if (!currentItem || !currentItem.summary) {
+      showToast('No summary available to copy.');
+      return;
+    }
+
+    const s = currentItem.summary;
+    const summaryText = `AI MEETING SUMMARY\n\nOverview:\n${s.overview}\n\nKey Points:\n${s.keyPoints.join('\n')}\n\nAction Items:\n${s.actionItems.join('\n')}`;
+
+    try {
+      await navigator.clipboard.writeText(summaryText);
+      showToast('Summary copied to clipboard!');
+    } catch (e) {
+      showToast('Failed to copy summary.');
+    }
+  });
+
+  // Transcript Search Filter
+  transcriptSearch.addEventListener('input', () => {
+    if (!currentItem || !currentItem.transcript) return;
+    renderTranscriptList(currentItem.transcript, transcriptSearch.value.trim().toLowerCase());
   });
 
   // Zoom Controls for Screenshots
@@ -158,6 +233,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         const durationStr = formatDuration(currentItem.duration);
         captureMeta.textContent = `Video • ${durationStr} • ${formatBytes(currentItem.blob?.size || 0)}`;
+
+        // Render AI Intelligence & Transcript
+        const transcript = currentItem.transcript || [];
+        transcriptCount.textContent = transcript.length;
+        renderTranscriptList(transcript);
+
+        const summary = currentItem.summary || { overview: 'No summary generated.', keyPoints: [], actionItems: [] };
+        renderSummary(summary);
       } else if (currentItem.type === 'image') {
         const imageUrl = URL.createObjectURL(currentItem.blob);
         imageViewer.src = imageUrl;
@@ -176,7 +259,83 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   /**
-   * Populate sidebar list
+   * Render Timestamped Interactive Transcript List
+   */
+  function renderTranscriptList(transcript = [], filterQuery = '') {
+    transcriptList.innerHTML = '';
+
+    if (!transcript || transcript.length === 0) {
+      transcriptList.innerHTML = '<div class="empty-state">No spoken audio detected during this recording.</div>';
+      return;
+    }
+
+    const filtered = filterQuery
+      ? transcript.filter(t => t.text.toLowerCase().includes(filterQuery))
+      : transcript;
+
+    if (filtered.length === 0) {
+      transcriptList.innerHTML = '<div class="empty-state">No matching transcript lines found.</div>';
+      return;
+    }
+
+    filtered.forEach((entry) => {
+      const itemEl = document.createElement('div');
+      itemEl.className = 'transcript-item';
+
+      itemEl.innerHTML = `
+        <span class="timestamp-tag" title="Click to jump to ${entry.timestamp}">${entry.timestamp}</span>
+        <span class="transcript-text">${escapeHtml(entry.text)}</span>
+      `;
+
+      // Jump video playback to exact timestamp on click!
+      itemEl.querySelector('.timestamp-tag').addEventListener('click', () => {
+        if (videoPlayer && !isNaN(entry.timeSec)) {
+          videoPlayer.currentTime = entry.timeSec;
+          videoPlayer.play();
+          
+          // Switch to video tab view
+          document.querySelector('.view-tab-btn[data-view="view-video"]').click();
+          showToast(`Jumped to ${entry.timestamp}`);
+        }
+      });
+
+      transcriptList.appendChild(itemEl);
+    });
+  }
+
+  /**
+   * Render AI Meeting Summary
+   */
+  function renderSummary(summary) {
+    summaryOverview.textContent = summary.overview || 'Meeting overview unavailable.';
+
+    // Key points
+    summaryKeyPoints.innerHTML = '';
+    if (summary.keyPoints && summary.keyPoints.length > 0) {
+      summary.keyPoints.forEach(pt => {
+        const li = document.createElement('li');
+        li.textContent = pt;
+        summaryKeyPoints.appendChild(li);
+      });
+    } else {
+      summaryKeyPoints.innerHTML = '<li>No specific key points generated.</li>';
+    }
+
+    // Action items
+    summaryActionItems.innerHTML = '';
+    if (summary.actionItems && summary.actionItems.length > 0) {
+      summary.actionItems.forEach(act => {
+        const li = document.createElement('li');
+        li.textContent = act;
+        summaryActionItems.appendChild(li);
+      });
+    } else {
+      summaryActionItems.innerHTML = '<li>No action items assigned.</li>';
+    }
+  }
+
+  /**
+   * Populate sidebar gallery list
    */
   async function refreshSidebarList() {
     try {

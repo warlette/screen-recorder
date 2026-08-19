@@ -1,5 +1,5 @@
 /**
- * IndexedDB storage utility for recordings and full-page screenshots.
+ * IndexedDB storage utility for recordings, full-page screenshots, transcripts, and AI summaries.
  */
 const DB_NAME = 'ScreenRecorderDB';
 const DB_VERSION = 1;
@@ -29,18 +29,19 @@ async function saveCapture(captureData) {
     const tx = db.transaction(STORE_CAPTURES, 'readwrite');
     const store = tx.objectStore(STORE_CAPTURES);
     
-    // Ensure item has ID and timestamp
     const item = {
       id: captureData.id || `cap_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       timestamp: captureData.timestamp || Date.now(),
       title: captureData.title || (captureData.type === 'video' ? 'Screen Recording' : 'Page Screenshot'),
       type: captureData.type, // 'video' or 'image'
       mimeType: captureData.mimeType,
-      blob: captureData.blob, // Blob object
-      dataUrl: captureData.dataUrl || null, // Optional Data URL for images
+      blob: captureData.blob,
+      dataUrl: captureData.dataUrl || null,
       duration: captureData.duration || 0,
       width: captureData.width || 0,
-      height: captureData.height || 0
+      height: captureData.height || 0,
+      transcript: captureData.transcript || [],
+      summary: captureData.summary || null
     };
 
     const req = store.put(item);
@@ -67,7 +68,7 @@ async function getAllCaptures() {
     const store = tx.objectStore(STORE_CAPTURES);
     const index = store.index('timestamp');
     const req = index.getAll();
-    req.onsuccess = () => resolve(req.result.reverse()); // latest first
+    req.onsuccess = () => resolve(req.result.reverse());
     req.onerror = () => reject(req.error);
   });
 }
